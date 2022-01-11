@@ -5,7 +5,7 @@
  *  By design, we only put there very generic config values which are used in several places to keep good readability of the tasks
  */
 
-var gutil = require('gulp-util');
+//var gutil = require('gulp-util');
 
 /**
  *  The main paths of your project handle these with care
@@ -25,7 +25,8 @@ exports.errorHandler = function(title) {
     'use strict';
 
     return function(err) {
-        gutil.log(gutil.colors.red('[' + title + ']'), err.toString());
+        //gutil.log(gutil.colors.red('[' + title + ']'), err.toString());
+        console.log(Console.log('[' + title + ']'), err.toString());
         this.emit('end');
     };
 };

@@ -1,5 +1,6 @@
 'use strict';
 
+const { Console } = require('console');
 var _ = require('lodash'),
     browserify = require('browserify'),
     buffer = require('vinyl-buffer'),
@@ -9,7 +10,7 @@ var _ = require('lodash'),
     derequire = require('gulp-derequire'),
     gulp = require('gulp'),
     gulpif = require('gulp-if'),
-    gutil = require('gulp-util'),
+    //gutil = require('gulp-util'),
     jshint = require('gulp-jshint'),
     notifier = require('node-notifier'),
     notify = require('gulp-notify'),
@@ -20,28 +21,10 @@ var _ = require('lodash'),
     uglify = require('gulp-uglify'),
     watchify = require('watchify');
 
-gulp.task('scripts', ['scripts:external', 'scripts:internal'], function() {
-    return gulp.src([
-            conf.paths.docs + '/js/neo4jd3.js',
-            conf.paths.docs + '/js/neo4jd3.min.js'
-        ])
-        .pipe(gulp.dest(conf.paths.dist + '/js'));
-});
-
 gulp.task('scripts:external', function() {
     return gulp.src([
             'node_modules/d3/build/d3.min.js'
         ])
-        .pipe(gulp.dest(conf.paths.docs + '/js'))
-        .pipe(connect.reload());
-});
-
-gulp.task('scripts:internal', ['scripts:jshint','scripts:derequire'], function() {
-    return gulp.src(conf.paths.docs + '/js/neo4jd3.js')
-        .pipe(concat('neo4jd3.js'))
-        .pipe(gulp.dest(conf.paths.docs + '/js'))
-        .pipe(rename({ suffix: '.min' }))
-        .pipe(uglify())
         .pipe(gulp.dest(conf.paths.docs + '/js'))
         .pipe(connect.reload());
 });
@@ -57,6 +40,26 @@ var entryFile = path.join(conf.paths.src, '/index.js');
 gulp.task('scripts:derequire', function() {
     return buildScript(entryFile, 'dev');
 });
+
+
+gulp.task('scripts:internal', gulp.series('scripts:jshint','scripts:derequire', function() {
+    return gulp.src(conf.paths.docs + '/js/neo4jd3.js')
+        .pipe(concat('neo4jd3.js'))
+        .pipe(gulp.dest(conf.paths.docs + '/js'))
+        .pipe(rename({ suffix: '.min' }))
+        .pipe(uglify())
+        .pipe(gulp.dest(conf.paths.docs + '/js'))
+        .pipe(connect.reload());
+}));
+
+gulp.task('scripts', gulp.series('scripts:external', 'scripts:internal', function() {
+    return gulp.src([
+            conf.paths.docs + '/js/neo4jd3.js',
+            conf.paths.docs + '/js/neo4jd3.min.js'
+        ])
+        .pipe(gulp.dest(conf.paths.dist + '/js'));
+}));
+
 
 function buildScript(filename, mode) {
     var bundleFilename = 'index.js';
@@ -99,7 +102,8 @@ function buildScript(filename, mode) {
     // listen for an update and run rebundle
     bundler.on('update', function() {
         rebundle();
-        gutil.log('Rebundle...');
+        // gutil.log('Rebundle...');
+        console.log('Rebundle...');
     });
 
     // run it once the first time buildScript is called
@@ -108,6 +112,7 @@ function buildScript(filename, mode) {
 
 function error(err) {
     notifier.notify({message: 'Error: ' + err.message});
-    gutil.log(gutil.colors.red('Error: ' + err));
+    // gutil.log(gutil.colors.red('Error: ' + err));
+    console.log(console.log('Error: ' + err));
     this.emit('end');
 }
