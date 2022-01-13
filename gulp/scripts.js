@@ -23,7 +23,8 @@ var _ = require('lodash'),
 
 gulp.task('scripts:external', function() {
     return gulp.src([
-            'node_modules/d3/build/d3.min.js'
+            'node_modules/d3/build/d3.min.js',
+            'node_modules/jquery/dist/jquery.min.js'
         ])
         .pipe(gulp.dest(conf.paths.docs + '/js'))
         .pipe(connect.reload());
@@ -65,7 +66,8 @@ function buildScript(filename, mode) {
     var bundleFilename = 'index.js';
 
     var browserifyConfig = {
-        standalone: 'Neo4jd3'
+        standalone: 'Neo4jd3',
+        transform: ['babelify']
     };
 
     var bundler;
