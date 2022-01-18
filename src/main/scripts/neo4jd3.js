@@ -31,6 +31,8 @@ function Neo4jD3(_selector, _options) {
             zoomFit: false,
             showNodeLabelsIfNoIcons: true
         },
+        // builtRelations = {}, // THIS IS FROM THE MULTIRELATIONSHIPS CODE BUT IT SEEMS IS NOT NEEDED
+        relationCount = {},
         VERSION = '0.0.1';
 
     function appendGraph(container) {
@@ -63,6 +65,20 @@ function Neo4jD3(_selector, _options) {
 
         svgNodes = svg.append('g')
                       .attr('class', 'nodes');
+
+        // THIS IS MULTI RELATIONS CODE TO CREATE THE TRIANGLES OF
+        // THE EDGES. THE PARAMETER options.arrowSize does not work now
+        svg.append("svg:defs").append("svg:marker")
+            .attr("id", "triangle")
+            .attr("refX", 2)
+            .attr("refY", 2)
+            .attr("markerWidth", 30)
+            .attr("markerHeight", 30)
+            .attr("markerUnits", "userSpaceOnUse")
+            .attr("orient", "auto")
+            .append("path")
+            .attr("d", "M 0 0 4 2 0 4 1 2")
+            .style("fill", "#a5abb6");
     }
 
     function appendImageToNode(node) {
@@ -272,9 +288,9 @@ function Neo4jD3(_selector, _options) {
 
     function appendOutlineToRelationship(r) {
         return r.append('path')
-                .attr('class', 'outline')
+                .attr('class', 'outline link')
                 .attr('fill', '#a5abb6')
-                .attr('stroke', 'none');
+                .attr("marker-end", "url(#triangle)");
     }
 
     function appendOverlayToRelationship(r) {
@@ -284,13 +300,17 @@ function Neo4jD3(_selector, _options) {
 
     function appendTextToRelationship(r) {
         return r.append('text')
+                .style("background-color", "steelblue")
                 .attr('class', 'text')
                 .attr('fill', '#000000')
-                .attr('font-size', '8px')
+                .attr('font-size', '6px')
                 .attr('pointer-events', 'none')
                 .attr('text-anchor', 'middle')
                 .text(function(d) {
-                    return d.type;
+                    let text = d.type;
+                    // THIS IS FROM THE MULTIRELATIONSHIPS CODE BUT IT SEEMS IS NOT NEEDED
+                    //builtRelations[`${d.endNode},${d.startNode},${d.type},`] = true;
+                    return text;
                 });
     }
 
@@ -712,7 +732,10 @@ function Neo4jD3(_selector, _options) {
                     }
                 });
 
-                data.graph.relationships.forEach(function(relationship) {
+                data.graph.relationships.forEach(function (relationship) {
+                    // THIS LINE WAS ON THE MULTIRELATIONSHIPS CODE,
+                    // BECAUSE SELF RELATIONSHIPS DON'T WORK, BUT I'M COMMENTING IT
+                    //if (relationship.startNode == relationship.endNode) return;
                     relationship.source = relationship.startNode;
                     relationship.target = relationship.endNode;
                     graph.relationships.push(relationship);
@@ -858,7 +881,6 @@ function Neo4jD3(_selector, _options) {
     }
 
     function tickNodes() {
-        // console.log('node is = ' + node);
         if (node) {
             // console.log('updating nodes...')
             node.attr('transform', function(d) {
@@ -870,7 +892,35 @@ function Neo4jD3(_selector, _options) {
     function tickRelationships() {
         if (relationship) {
             relationship.attr('transform', function(d) {
-                var angle = rotation(d.source, d.target);
+                if (!d.linkn) {
+                    var key = d.source.id + '@@' + d.target.id;
+                    if (!relationCount[key]) {
+                        relationCount[key] = 1;
+                    }
+                    d.linkn = relationCount[key]++;
+                }
+    
+                var center = {x: 0, y: 0},
+                    angle = rotation(d.source, d.target),
+                    u = unitaryVector(d.source, d.target),
+                    n = unitaryNormalVector(d.source, d.target),
+                    g = rotatePoint(center, u, -10 * d.linkn),
+                    source = rotatePoint(center, {
+                      x: 0 + (options.nodeRadius + 1) * u.x - n.x,
+                      y: 0 + (options.nodeRadius + 1) * u.y - n.y
+                    }, angle + 10 * d.linkn),
+                    target = rotatePoint(center, {
+                      x: d.target.x - d.source.x - (options.nodeRadius + 2) * g.x,
+                      y: d.target.y - d.source.y - (options.nodeRadius + 2) * g.y
+                    }, angle),
+                    uu = unitaryNormalVector(source, target),
+                    middle = {
+                      x: (source.x + target.x) / 2 + uu.x * 20 * d.linkn,
+                      y: (source.y + target.y) / 2 + uu.y * 20 * d.linkn
+                  };
+                d.outline = { middle: middle, source: source, target: target, u: uu };
+                
+                // var angle = rotation(d.source, d.target);
                 return 'translate(' + d.source.x + ', ' + d.source.y + ') rotate(' + angle + ')';
             });
 
@@ -881,65 +931,34 @@ function Neo4jD3(_selector, _options) {
     }
 
     function tickRelationshipsOutlines() {
-        relationship.each(function(relationship) {
+        relationship.each(function (relationship) {
             var rel = d3.select(this),
-                outline = rel.select('.outline'),
-                text = rel.select('.text'),
-                bbox = text.node().getBBox(),
-                padding = 3;
-
-            outline.attr('d', function(d) {
-                var center = { x: 0, y: 0 },
-                    angle = rotation(d.source, d.target),
-                    textBoundingBox = text.node().getBBox(),
-                    textPadding = 5,
-                    u = unitaryVector(d.source, d.target),
-                    textMargin = { x: (d.target.x - d.source.x - (textBoundingBox.width + textPadding) * u.x) * 0.5, y: (d.target.y - d.source.y - (textBoundingBox.width + textPadding) * u.y) * 0.5 },
-                    n = unitaryNormalVector(d.source, d.target),
-                    rotatedPointA1 = rotatePoint(center, { x: 0 + (options.nodeRadius + 1) * u.x - n.x, y: 0 + (options.nodeRadius + 1) * u.y - n.y }, angle),
-                    rotatedPointB1 = rotatePoint(center, { x: textMargin.x - n.x, y: textMargin.y - n.y }, angle),
-                    rotatedPointC1 = rotatePoint(center, { x: textMargin.x, y: textMargin.y }, angle),
-                    rotatedPointD1 = rotatePoint(center, { x: 0 + (options.nodeRadius + 1) * u.x, y: 0 + (options.nodeRadius + 1) * u.y }, angle),
-                    rotatedPointA2 = rotatePoint(center, { x: d.target.x - d.source.x - textMargin.x - n.x, y: d.target.y - d.source.y - textMargin.y - n.y }, angle),
-                    rotatedPointB2 = rotatePoint(center, { x: d.target.x - d.source.x - (options.nodeRadius + 1) * u.x - n.x - u.x * options.arrowSize, y: d.target.y - d.source.y - (options.nodeRadius + 1) * u.y - n.y - u.y * options.arrowSize }, angle),
-                    rotatedPointC2 = rotatePoint(center, { x: d.target.x - d.source.x - (options.nodeRadius + 1) * u.x - n.x + (n.x - u.x) * options.arrowSize, y: d.target.y - d.source.y - (options.nodeRadius + 1) * u.y - n.y + (n.y - u.y) * options.arrowSize }, angle),
-                    rotatedPointD2 = rotatePoint(center, { x: d.target.x - d.source.x - (options.nodeRadius + 1) * u.x, y: d.target.y - d.source.y - (options.nodeRadius + 1) * u.y }, angle),
-                    rotatedPointE2 = rotatePoint(center, { x: d.target.x - d.source.x - (options.nodeRadius + 1) * u.x + (- n.x - u.x) * options.arrowSize, y: d.target.y - d.source.y - (options.nodeRadius + 1) * u.y + (- n.y - u.y) * options.arrowSize }, angle),
-                    rotatedPointF2 = rotatePoint(center, { x: d.target.x - d.source.x - (options.nodeRadius + 1) * u.x - u.x * options.arrowSize, y: d.target.y - d.source.y - (options.nodeRadius + 1) * u.y - u.y * options.arrowSize }, angle),
-                    rotatedPointG2 = rotatePoint(center, { x: d.target.x - d.source.x - textMargin.x, y: d.target.y - d.source.y - textMargin.y }, angle);
-
-                return 'M ' + rotatedPointA1.x + ' ' + rotatedPointA1.y +
-                       ' L ' + rotatedPointB1.x + ' ' + rotatedPointB1.y +
-                       ' L ' + rotatedPointC1.x + ' ' + rotatedPointC1.y +
-                       ' L ' + rotatedPointD1.x + ' ' + rotatedPointD1.y +
-                       ' Z M ' + rotatedPointA2.x + ' ' + rotatedPointA2.y +
-                       ' L ' + rotatedPointB2.x + ' ' + rotatedPointB2.y +
-                       ' L ' + rotatedPointC2.x + ' ' + rotatedPointC2.y +
-                       ' L ' + rotatedPointD2.x + ' ' + rotatedPointD2.y +
-                       ' L ' + rotatedPointE2.x + ' ' + rotatedPointE2.y +
-                       ' L ' + rotatedPointF2.x + ' ' + rotatedPointF2.y +
-                       ' L ' + rotatedPointG2.x + ' ' + rotatedPointG2.y +
-                       ' Z';
+                outline = rel.select('.outline');
+                outline.attr('d', function (d) {
+                    var source = d.outline.source,
+                    target = d.outline.target,
+                    middle = d.outline.middle;
+              
+                    return `M ${target.x}, ${target.y} 
+                        Q ${middle.x} ${middle.y} ${source.x} ${source.y} 
+                        Q ${middle.x} ${middle.y} ${target.x}, ${target.y}
+                        `;
+            
             });
         });
     }
 
     function tickRelationshipsOverlays() {
         relationshipOverlay.attr('d', function(d) {
-            var center = { x: 0, y: 0 },
-                angle = rotation(d.source, d.target),
-                n1 = unitaryNormalVector(d.source, d.target),
-                n = unitaryNormalVector(d.source, d.target, 50),
-                rotatedPointA = rotatePoint(center, { x: 0 - n.x, y: 0 - n.y }, angle),
-                rotatedPointB = rotatePoint(center, { x: d.target.x - d.source.x - n.x, y: d.target.y - d.source.y - n.y }, angle),
-                rotatedPointC = rotatePoint(center, { x: d.target.x - d.source.x + n.x - n1.x, y: d.target.y - d.source.y + n.y - n1.y }, angle),
-                rotatedPointD = rotatePoint(center, { x: 0 + n.x - n1.x, y: 0 + n.y - n1.y }, angle);
-
-            return 'M ' + rotatedPointA.x + ' ' + rotatedPointA.y +
-                   ' L ' + rotatedPointB.x + ' ' + rotatedPointB.y +
-                   ' L ' + rotatedPointC.x + ' ' + rotatedPointC.y +
-                   ' L ' + rotatedPointD.x + ' ' + rotatedPointD.y +
-                   ' Z';
+            var source = d.outline.source,
+                target = d.outline.target,
+                middle = d.outline.middle,
+                u = d.outline.u;
+            
+            return `M ${source.x}, ${source.y} 
+                Q ${middle.x + 5 * u.x} ${middle.y + 5 * u.y} ${target.x} ${target.y}
+                Q  ${middle.x - 5 * u.x} ${middle.y - 5 * u.y}  ${source.x} ${source.y}
+                Z`;
         });
     }
 
@@ -947,13 +966,15 @@ function Neo4jD3(_selector, _options) {
         relationshipText.attr('transform', function(d) {
             var angle = (rotation(d.source, d.target) + 360) % 360,
                 mirror = angle > 90 && angle < 270,
-                center = { x: 0, y: 0 },
-                n = unitaryNormalVector(d.source, d.target),
-                nWeight = mirror ? 2 : -3,
-                point = { x: (d.target.x - d.source.x) * 0.5 + n.x * nWeight, y: (d.target.y - d.source.y) * 0.5 + n.y * nWeight },
-                rotatedPoint = rotatePoint(center, point, angle);
-
-            return 'translate(' + rotatedPoint.x + ', ' + rotatedPoint.y + ') rotate(' + (mirror ? 180 : 0) + ')';
+                source = d.outline.source,
+                target = d.outline.target,
+                u = d.outline.u,
+                middle = {
+                  x: (source.x + target.x) / 2 + u.x * (mirror ? 8 : 10) * d.linkn + u.x,
+                  y: (source.y + target.y) / 2 + u.y * (mirror ? 8 : 10) * d.linkn + u.y
+                };
+            
+            return 'translate(' + middle.x + ', ' + middle.y + ') rotate(' + (mirror ? 180 : 0) + ')';
         });
     }
 
