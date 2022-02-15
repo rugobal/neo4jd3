@@ -1,9 +1,10 @@
-/* global d3, document, window */
+/* global d3, document, window, Spinner */
 /* jshint latedef:nofunc */
 'use strict';
 
+import { select } from 'd3';
 // this import is not necessary
-import $ from 'jquery';
+import $, { type } from 'jquery';
 
 function Neo4jD3(_selector, _options) {
     var container, graph, info, node, nodes, relationship, relationshipOutline, relationshipOverlay, relationshipText, relationships, selector, simulation, svg, svgNodes, svgRelationships, svgScale, svgTranslate,
@@ -33,6 +34,19 @@ function Neo4jD3(_selector, _options) {
         },
         // builtRelations = {}, // THIS IS FROM THE MULTIRELATIONSHIPS CODE BUT IT SEEMS IS NOT NEEDED
         relationCount = {},
+        // have variable to know when the data is loaded, and only speed up simulation then
+        dataLoadingFinished = false,
+        // spinner options
+        spinnerOpts = {
+            lines: 9, // The number of lines to draw
+            length: 9, // The length of each line
+            width: 5, // The line thickness
+            radius: 14, // The radius of the inner circle
+            color: '#EE3124', // #rgb or #rrggbb or array of colors
+            speed: 1.9, // Rounds per second
+            trail: 40, // Afterglow percentage
+            className: 'spinner', // The CSS class to assign to the spinner
+        },
         VERSION = '0.0.1';
 
     function appendGraph(container) {
@@ -74,7 +88,7 @@ function Neo4jD3(_selector, _options) {
             .attr("refY", 2)
             .attr("markerWidth", 30)
             .attr("markerHeight", 30)
-            .attr("markerUnits", "userSpaceOnUse")
+            //.attr("markerUnits", "userSpaceOnUse") // commenting this line so the triangle of the arrows change when we change the stoke-width attribute of the .link css class
             .attr("orient", "auto")
             .append("path")
             .attr("d", "M 0 0 4 2 0 4 1 2")
@@ -191,7 +205,7 @@ function Neo4jD3(_selector, _options) {
                    })
                    .on('mouseleave', function(d) {
                        if (info) {
-                           clearInfo(d);
+                           //clearInfo(d); <-- DO NOT CLEAR INFO WHEN MOVING MOUSE OUT OF THE NODE
                        }
 
                        if (typeof options.onNodeMouseLeave === 'function') {
@@ -221,10 +235,14 @@ function Neo4jD3(_selector, _options) {
         return n;
     }
 
+    function getNodeRadius(d) {
+        return (d.radius) ? d.radius : options.nodeRadius;
+    }
+
     function appendOutlineToNode(node) {
-        return node.append('circle')
+        return node.append('svg:circle')
                    .attr('class', 'outline')
-                   .attr('r', options.nodeRadius)
+                   .attr("r", function(d) { return getNodeRadius(d);})
                    .style('fill', function(d) {
                        return options.nodeOutlineFillColor ? options.nodeOutlineFillColor : class2color(d.labels[0]);
                    })
@@ -239,7 +257,7 @@ function Neo4jD3(_selector, _options) {
     function appendRingToNode(node) {
         return node.append('circle')
                    .attr('class', 'ring')
-                   .attr('r', options.nodeRadius * 1.16)
+                   .attr("r", function(d) { return getNodeRadius(d) * 1.05;})
                    .append('title').text(function(d) {
                        return toString(d);
                    });
@@ -252,12 +270,12 @@ function Neo4jD3(_selector, _options) {
                    })
                    .attr('fill', '#ffffff')
                    .attr('font-size', function(d) {
-                       return icon(d) ? (options.nodeRadius + 'px') : '10px';
+                       return icon(d) ? (getNodeRadius(d) + 'px') : '10px';
                    })
                    .attr('pointer-events', 'none')
                    .attr('text-anchor', 'middle')
                    .attr('y', function(d) {
-                       return icon(d) ? (parseInt(Math.round(options.nodeRadius * 0.32)) + 'px') : '4px';
+                       return icon(d) ? (parseInt(Math.round(getNodeRadius(d) * 0.32)) + 'px') : '4px';
                    })
                    .html(function(d) {
                        var _icon = icon(d);
@@ -555,7 +573,7 @@ function Neo4jD3(_selector, _options) {
         if (options.d3Data) {
             updateWithD3Data(options.d3Data);
         } else if (options.d3DataUrl) {
-            loadD3DataFromUrl(options.d3DataUrl);
+            loadD3DataFromUrl(options.d3DataUrl, selector);
         } else if (options.neo4jData) {
             loadNeo4jData(options.neo4jData);
         } else if (options.neo4jDataUrl) {
@@ -604,23 +622,14 @@ function Neo4jD3(_selector, _options) {
 
     function speedUpSimulation() {
        var ticksPerRender = 10;
-    //    console.log('window = ' + window.constructor.name);
-    //    console.log('$(window) = ' + $(window));
+       
        window.requestAnimationFrame(function render() {
-            for (var i = 0; i < ticksPerRender; i++) {
-                simulation.tick();
+           if (dataLoadingFinished && nodes.length > 100) {
+                // console.log('speeding up');
+                for (var i = 0; i < ticksPerRender; i++) {
+                    simulation.tick();
+                }
             }
-            // relationship
-            //     .attr('x1', function (d) { return d.source.x; })
-            //     .attr('y1', function (d) { return d.source.y; })
-            //     .attr('x2', function (d) { return d.target.x; })
-            //     .attr('y2', function (d) { return d.target.y; });
-            // node
-            //     .attr('cx', function (d) { return d.x; })
-            //     .attr('cy', function (d) { return d.y; });
-
-            // console.log('going to tick');
-            // tick();
 
             if (simulation.alpha() > 0) {
                window.requestAnimationFrame(render);
@@ -630,49 +639,30 @@ function Neo4jD3(_selector, _options) {
 
     function initSimulation() {
         var simulation = d3.forceSimulation()
-//                           .velocityDecay(0.8)
-//                           .force('x', d3.force().strength(0.002))
-//                           .force('y', d3.force().strength(0.002))
-                           .force('collide', d3.forceCollide().radius(function(d) {
-                               return options.minCollision;
-                           }).iterations(2))
-                           .force('charge', d3.forceManyBody())
-                           .force('link', d3.forceLink().id(function(d) {
-                               return d.id;
-                           }))
-                           .force('center', d3.forceCenter(svg.node().parentElement.parentElement.clientWidth / 2, svg.node().parentElement.parentElement.clientHeight / 2))
-                        //    .stop();
-                        //    .alphaMin(0.075)
-                           .on('tick', function() {
-                               tick();
-                           })
-                           .on('end', function() {
-                               if (options.zoomFit && !justLoaded) {
-                                   justLoaded = true;
-                                   zoomFit(2);
-                               }
-                           });
+            //                           .velocityDecay(0.8)
+            //                           .force('x', d3.force().strength(0.002))
+            //                           .force('y', d3.force().strength(0.002))
+            .force('collide', d3.forceCollide().radius(function (d) {
+                return options.minCollision;
+            }).iterations(2))
+            .force('charge', d3.forceManyBody())
+            .force('link', d3.forceLink().id(function (d) {
+                return d.id;
+            }))
+            .force('center', d3.forceCenter(svg.node().parentElement.parentElement.clientWidth / 2, svg.node().parentElement.parentElement.clientHeight / 2))
+            //    .stop();
+            //    .alphaMin(0.075)
+            .on('tick', function () {
+                tick();
+            })
+            .on('end', function () {
+                if (options.zoomFit && !justLoaded) {
+                    justLoaded = true;
+                    zoomFit(2);
+                }
+            });
 
         speedUpSimulation();
-
-
-
-        // for (var i = 0; i < 300; ++i) simulation.tick();
-        // tick();
-
-        // See https://github.com/d3/d3-force/blob/master/README.md#simulation_tick
-        // for (var i = 0, n = Math.ceil(Math.log(simulation.alphaMin()) / Math.log(1 - simulation.alphaDecay())); i < n; ++i) {
-        //     // console.log('ticking');
-        //     simulation.tick();
-        // }
-        // console.log('going to tick');
-        // tick();
-        // node.attr("cx", function(d) {
-        //     return d.x;
-        // })
-        // .attr("cy", function(d) {
-        //     return d.y;
-        // })
 
         return simulation;
     }
@@ -684,30 +674,50 @@ function Neo4jD3(_selector, _options) {
         updateWithNeo4jData(options.neo4jData);
     }
 
-    function loadD3DataFromUrl(d3DataUrl) {
+    function loadD3DataFromUrl(d3DataUrl, selector) {
         nodes = [];
         relationships = [];
+        dataLoadingFinished = false;
+
+        // trigger loader
+        var target = document.getElementById(selector.replace('#',''));
+        var spinner = new Spinner(spinnerOpts).spin(target);
 
         d3.json(d3DataUrl, function(error, data) {
             if (error) {
                 throw error;
             }
+            dataLoadingFinished = true;
+            console.log('finished loading data');
             if (typeof options.onDataLoad === 'function') {
                 options.onDataLoad(data);
             }
+            spinner.stop();
             updateWithD3Data(data);
         });
+
+        // $.get(d3DataUrl, function(data){
+        //     const jsonData = JSON.parse(data);
+        //     console.log("Data: " + typeof(jsonData));
+
+        //     if (typeof options.onDataLoad === 'function') {
+        //         options.onDataLoad(jsonData);
+        //     }
+        //     updateWithD3Data(jsonData);
+        //   });
     }
 
     function loadNeo4jDataFromUrl(neo4jDataUrl) {
         nodes = [];
         relationships = [];
+        dataLoadingFinished = false;
 
         d3.json(neo4jDataUrl, function(error, data) {
             if (error) {
                 throw error;
             }
 
+            dataLoadingFinished = true;
             updateWithNeo4jData(data);
         });
     }
@@ -889,6 +899,78 @@ function Neo4jD3(_selector, _options) {
         }
     }
 
+    /**
+     * 
+     * angle goes from 0 to 360, we mod it in case it's greater
+     * @param {*} center 
+     * @param {*} radius 
+     * @param {*} angle 
+     * @returns 
+     */
+    function pointOnCircunference(center, radius, angle) {
+        angle = angle % 360;
+        var radians = (Math.PI / 180) * angle;
+        return {
+            x: center.x + radius * Math.cos(radians),
+            y: center.y + radius * Math.sin(radians)
+        };
+    }
+
+    function tickSelfRelationship(d) {
+
+        var x1 = d.source.x,
+            y1 = d.source.y,
+            x2 = d.target.x,
+            y2 = d.target.y,
+            dx = x2 - x1,
+            dy = y2 - y1,
+            dr = Math.sqrt(dx * dx + dy * dy),
+            // Defaults for normal edge.
+            drx = dr,
+            dry = dr,
+            xRotation = 0, // degrees
+            largeArc = 0, // 1 or 0
+            sweep = 1; // 1 or 0
+
+        // If SELF NODE
+
+        // Fiddle with this angle to get loop oriented.
+        xRotation = -45;
+
+        // Needs to be 1.
+        largeArc = 1;
+
+        // Change sweep to change orientation of loop. 
+        //sweep = 0;
+
+        // Make drx and dry different to get an ellipse
+        // instead of a circle.
+        drx = 25;
+        dry = 20;
+
+        // For whatever reason the arc collapses to a point if the beginning
+        // and ending points of the arc are the same, so kludge it.
+        x2 = x2 + 1;
+        y2 = y2 + 1;
+        
+
+        /////
+        var source = { x: x1, y: y1 };
+        var target = { x: x2, y: y2 };
+        var angleStart = (d.linkn === 1) ? (d.linkn -1) * 30 : (d.linkn -1) * 30 * 2;
+        var angleEnd = angleStart + 30;
+        var _source = source; // the original source
+        source = pointOnCircunference(source, getNodeRadius(d.source)+1, angleStart);
+        target = pointOnCircunference(target, getNodeRadius(d.target)+1.5, angleEnd);
+        // uTarget is the unitary vector of the source point of the angle and the closest point on the circuference
+        // the one with just the same angle + 1
+        var uTarget = pointOnCircunference(_source, getNodeRadius(d.source)+1, angleStart+1);
+        var uu = unitaryNormalVector(source, uTarget);
+        d.outline = {source: source, target: target, drx: drx, dry: dry, 
+            xRotation: xRotation, largeArc: largeArc, sweep: sweep, u: uu, angleStart: angleStart, angleEnd: angleEnd};
+
+    }
+
     function tickRelationships() {
         if (relationship) {
             relationship.attr('transform', function(d) {
@@ -899,29 +981,39 @@ function Neo4jD3(_selector, _options) {
                     }
                     d.linkn = relationCount[key]++;
                 }
-    
-                var center = {x: 0, y: 0},
+
+                // Self edge
+                if (d.source.id === d.target.id) {
+                    tickSelfRelationship(d);
+                } else {
+
+                    var center = {x: 0, y: 0},
                     angle = rotation(d.source, d.target),
                     u = unitaryVector(d.source, d.target),
                     n = unitaryNormalVector(d.source, d.target),
                     g = rotatePoint(center, u, -10 * d.linkn),
                     source = rotatePoint(center, {
-                      x: 0 + (options.nodeRadius + 1) * u.x - n.x,
-                      y: 0 + (options.nodeRadius + 1) * u.y - n.y
+                      x: 0 + (getNodeRadius(d.source) + 1) * u.x - n.x,
+                      y: 0 + (getNodeRadius(d.source) + 1) * u.y - n.y
                     }, angle + 10 * d.linkn),
                     target = rotatePoint(center, {
-                      x: d.target.x - d.source.x - (options.nodeRadius + 2) * g.x,
-                      y: d.target.y - d.source.y - (options.nodeRadius + 2) * g.y
+                      x: d.target.x - d.source.x - (getNodeRadius(d.target) + 2) * g.x,
+                      y: d.target.y - d.source.y - (getNodeRadius(d.target) + 2) * g.y
                     }, angle),
                     uu = unitaryNormalVector(source, target),
                     middle = {
                       x: (source.x + target.x) / 2 + uu.x * 20 * d.linkn,
                       y: (source.y + target.y) / 2 + uu.y * 20 * d.linkn
-                  };
-                d.outline = { middle: middle, source: source, target: target, u: uu };
+                    };
+
+                    d.outline = { middle: middle, source: source, target: target, u: uu };
+
+                    // var angle = rotation(d.source, d.target);
+                    return 'translate(' + d.source.x + ', ' + d.source.y + ') rotate(' + angle + ')';
+                }
+    
                 
-                // var angle = rotation(d.source, d.target);
-                return 'translate(' + d.source.x + ', ' + d.source.y + ') rotate(' + angle + ')';
+                
             });
 
             tickRelationshipsTexts();
@@ -936,13 +1028,23 @@ function Neo4jD3(_selector, _options) {
                 outline = rel.select('.outline');
                 outline.attr('d', function (d) {
                     var source = d.outline.source,
-                    target = d.outline.target,
-                    middle = d.outline.middle;
-              
-                    return `M ${target.x}, ${target.y} 
-                        Q ${middle.x} ${middle.y} ${source.x} ${source.y} 
-                        Q ${middle.x} ${middle.y} ${target.x}, ${target.y}
-                        `;
+                        target = d.outline.target;
+
+                    if (d.source.id === d.target.id) {
+
+                        return `M ${source.x}, ${source.y} 
+                            A ${d.outline.drx}, ${d.outline.dry} ${d.outline.xRotation}, 
+                            ${d.outline.largeArc}, ${d.outline.sweep} ${target.x}, ${target.y}
+                            `;
+
+                    } else {
+                        var middle = d.outline.middle;
+                
+                        return `M ${target.x}, ${target.y} 
+                            Q ${middle.x} ${middle.y} ${source.x} ${source.y} 
+                            Q ${middle.x} ${middle.y} ${target.x}, ${target.y}
+                            `;
+                    }
             
             });
         });
@@ -952,29 +1054,92 @@ function Neo4jD3(_selector, _options) {
         relationshipOverlay.attr('d', function(d) {
             var source = d.outline.source,
                 target = d.outline.target,
-                middle = d.outline.middle,
                 u = d.outline.u;
+
+            if (d.source.id === d.target.id) {
+
+                //Creating an Arc path.
+                // Sources: https://www.visualcinnamon.com/2015/09/placing-text-on-arcs
+                //          https://lvngd.com/blog/arc-diagrams-d3js-part-ii/
+                //          https://www.w3.org/TR/SVG/paths.html
+                //
+                // Path text    
+                // M start-x, start-y A radius-x, radius-y, x-axis-rotation,
+                // large-arc-flag, sweep-flag, end-x, end-y
+
+                return `M ${source.x}, ${source.y} 
+                    A ${d.outline.drx}, ${d.outline.dry} ${d.outline.xRotation}, 
+                    ${d.outline.largeArc}, ${d.outline.sweep} ${target.x}, ${target.y}
+                    Z`;
+
+            } else {
+
+                var middle = d.outline.middle;
             
-            return `M ${source.x}, ${source.y} 
-                Q ${middle.x + 5 * u.x} ${middle.y + 5 * u.y} ${target.x} ${target.y}
-                Q  ${middle.x - 5 * u.x} ${middle.y - 5 * u.y}  ${source.x} ${source.y}
-                Z`;
+                return `M ${source.x}, ${source.y} 
+                    Q ${middle.x + 8 * u.x} ${middle.y + 7 * u.y} ${target.x} ${target.y}
+                    Q  ${middle.x - 8 * u.x} ${middle.y - 7 * u.y}  ${source.x} ${source.y}
+                    Z`;
+
+            }
+            
+        })
+        .attr("stroke-width", function(d){
+            if (d.source.id === d.target.id) {
+                return '5';
+            }
+        })
+        .attr("fill", function(d){
+            if (d.source.id === d.target.id) {
+                return '#ffffff';
+            } else {
+                return '#6ac6ff';
+            }
+        })
+        .attr("stroke", function(d){
+           if (d.source.id === d.target.id) {
+                return '#6ac6ff';
+           }
         });
+    }
+
+    function pointOnEllipse(center, a, b, angle) {
+        angle = angle % 360;
+        var radians = (Math.PI / 180) * angle,
+            x = center.x + a * Math.cos(radians),
+            y = center.y + b * Math.sin(radians);
+
+        return {x: x, y: y};
     }
 
     function tickRelationshipsTexts() {
         relationshipText.attr('transform', function(d) {
-            var angle = (rotation(d.source, d.target) + 360) % 360,
-                mirror = angle > 90 && angle < 270,
-                source = d.outline.source,
+
+            var source = d.outline.source,
                 target = d.outline.target,
-                u = d.outline.u,
-                middle = {
-                  x: (source.x + target.x) / 2 + u.x * (mirror ? 8 : 10) * d.linkn + u.x,
-                  y: (source.y + target.y) / 2 + u.y * (mirror ? 8 : 10) * d.linkn + u.y
-                };
+                u = d.outline.u;
+
+            if (d.source.id === d.target.id) {
+
+                // 'center' is the center of the ellipse, that is the self-link.
+                // the unitary vector 'd.outline.u' is the perpendicular vector of the starting point of the link
+                var center = {x: source.x + (d.outline.drx * u.x), y: source.y + (d.outline.dry * u.y)};
+                var selfLinkMiddle = pointOnEllipse(center, d.outline.drx, d.outline.dry, (d.outline.angleStart+d.outline.angleEnd)/2);
+
+                return 'translate(' + selfLinkMiddle.x + ', ' + selfLinkMiddle.y + ')';
+
+            } else {
+                var angle = (rotation(d.source, d.target) + 360) % 360,
+                    mirror = angle > 90 && angle < 270,
+                    middle = {
+                        x: (source.x + target.x) / 2 + u.x * (mirror ? 8 : 10) * d.linkn + u.x,
+                        y: (source.y + target.y) / 2 + u.y * (mirror ? 8 : 10) * d.linkn + u.y
+                    };
             
-            return 'translate(' + middle.x + ', ' + middle.y + ') rotate(' + (mirror ? 180 : 0) + ')';
+                return 'translate(' + middle.x + ', ' + middle.y + ') rotate(' + (mirror ? 180 : 0) + ')';
+            }
+
+            
         });
     }
 
@@ -1044,10 +1209,10 @@ function Neo4jD3(_selector, _options) {
     }
 
     function updateNodesAndRelationships(n, r) {
-        updateRelationships(r);
-        updateNodes(n);
         console.log('#nodes:' + n.length);
         console.log('#relationships:' + r.length);
+        updateRelationships(r);
+        updateNodes(n);
 
         simulation.nodes(nodes);
         simulation.force('link').links(relationships);

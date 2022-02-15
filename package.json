@@ -92,6 +92,7 @@
     "jquery": "^3.6.0",
     "babel-core": "^6.26.3",
     "babelify": "^8.0.0",
-    "babel-preset-env": "latest"
+    "babel-preset-env": "latest",
+    "pako": "^2.0.4"
   }
 }

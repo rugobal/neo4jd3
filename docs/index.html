@@ -20,13 +20,61 @@
     </head>
     <body>
         <div id="neo4jd3"></div>
-        <a href="https://github.com/eisman/neo4jd3"><img style="cursor: pointer; position: absolute; top: 0; right: 0; border: 0;" src="img/forkme_right_gray_6d6d6d.png" alt="Fork me on GitHub" data-canonical-src="img/forkme_right_gray_6d6d6d.png"></a>
+        <a href="https://github.com/eisman/neo4jd3"></a>
 
         <!-- Scripts -->
         <script src="js/d3.min.js"></script>
         <script src="js/jquery.min.js"></script>
+        <script src="js/pako.min.js"></script>
+        <script src="js/spin.min.js"></script>
         <script src="js/neo4jd3.js?v=0.0.1"></script>
         <script type="text/javascript">
+
+            function decompressB64(b64Data) {
+
+                // Decode base64 (convert ascii to binary)
+                var strData  = atob(b64Data);
+
+                // Convert binary string to character-number array
+                var charData = strData.split('').map(function(x){return x.charCodeAt(0);});
+
+                // Turn number array into byte-array
+                var binData = new Uint8Array(charData);
+
+                // Pako magic
+                var data = pako.inflate(binData);
+
+                // var restored = String.fromCharCode.apply(null, new Uint16Array(data));
+
+                var restored = new Uint16Array(data).reduce(function (data, byte) {
+                    return data + String.fromCharCode(byte);
+                }, '');
+
+                return restored;
+            }
+
+            function decompressGraph(data) {
+                data.nodes = JSON.parse(decompressB64(data.nodes));
+                data.relationships = JSON.parse(decompressB64(data.relationships));
+                return data;
+            }
+
+            function renameField(o, old_key, new_key) {
+                if (old_key !== new_key) {
+                    Object.defineProperty(o, new_key,
+                        Object.getOwnPropertyDescriptor(o, old_key));
+                    delete o[old_key];
+                }
+            }
+
+            function push2Properties(o, key) {
+                props = o.properties;
+                Object.defineProperty(props, key,
+                    Object.getOwnPropertyDescriptor(o, key));
+                //delete o[key];
+            }
+
+
             function init() {
                 var neo4jd3 = new Neo4jd3('#neo4jd3', {
                     classes2colors: {
@@ -98,9 +146,10 @@
 //                        'zoomIn': 'img/twemoji/1f50d.svg',
 //                        'zoomOut': 'img/twemoji/1f50e.svg' */
                     },
-                    minCollision: 60,
-                    /* d3DataUrl: 'json/d3DataSmall.json', */
-                    neo4jDataUrl: 'json/neo4jDataMultirelation.json',
+                    minCollision: 80,
+                    /* d3DataUrl: 'json/d3Data.json', */
+                    d3DataUrl: 'json/CHASLULX_6550220357.json',
+                    neo4jDataUrl: 'json/neo4jData.json',
                     nodeRadius: 25,
                     onNodeDoubleClick: function(node) {
                         // switch(node.id) {
@@ -119,18 +168,65 @@
                         console.log('double click on relationship: ' + JSON.stringify(relationship));
                     },
                     onDataLoad: (data) => {
+                        // Decompress graph
+                        //var data = decompressGraph(data);
+
+                        const rScale = d3.scaleLinear()
+                                .domain([
+                                    Math.round(d3.min(data.nodes, d => d.rank_value * 1e09)),
+                                    Math.round(d3.max(data.nodes, d => d.rank_value * 1e09))
+                                ])
+                                .range([25, 75]);
+                        // console.log("min of rank_value: " + Math.round(d3.min(data.nodes, d => d.rank_value * 1e09)));
+                        // console.log("max of rank_value: " + Math.round(d3.max(data.nodes, d => d.rank_value * 1e09)));
+
                         data.nodes.forEach(function(n, i) { 
-                            if (n.id.startsWith('CITI')) {
+                            
+                            // multiply the rank value to make it consumable
+                            n.rank_value = n.rank_value * 1e09;
+
+                            // right format for the viz
+                            if (n.bank_bic.startsWith('CITI')) {
                                 n.labels = ['CitiAccount']; 
                             } else {
                                 n.labels = ['Account']; 
                             }
-
                             n.properties = {};
+                            push2Properties(n, "bank_bic");
+                            push2Properties(n, "account_id");
+                            push2Properties(n, "rank_value");
+                            push2Properties(n, "total_sent");
+                            push2Properties(n, "total_received");
+                            n.properties.total_sent = d3.format("(,.2f")(n.total_sent);
+                            n.properties.total_received = d3.format("(,.2f")(n.total_received);
+                            n.properties.rank_value = d3.format("(,.2f")(n.rank_value);
+                            
+                            // set the radius based on the rank_value
+                            n.radius = Math.round(rScale(Math.round(n.rank_value)));
+                            
                         });
                         data.relationships.forEach(function(r, i) { 
+                            
+                            // right format for the viz
                             r.type = "Sent";
+                            renameField(r, "edgeId", "id");
+                            renameField(r, "originId", "source");
+                            renameField(r, "destinationId", "target");
                             r.properties = {}; 
+                            push2Properties(r, "amount");
+                            push2Properties(r, "send_bank_bic");
+                            push2Properties(r, "send_account_id");
+                            push2Properties(r, "send_gfpid");
+                            push2Properties(r, "send_gfcid");
+                            push2Properties(r, "send_bank_ctry_code");
+                            push2Properties(r, "bene_bank_bic");
+                            push2Properties(r, "bene_account_id");
+                            push2Properties(r, "bene_gfpid");
+                            push2Properties(r, "bene_gfcid");
+                            push2Properties(r, "bene_bank_ctry_code");
+                            // format fields
+                            r.properties.amount = d3.format("(,.2f")(r.amount);
+
                         });
                     },
                     zoomFit: false,

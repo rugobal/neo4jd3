@@ -24,7 +24,10 @@ var _ = require('lodash'),
 gulp.task('scripts:external', function() {
     return gulp.src([
             'node_modules/d3/build/d3.min.js',
-            'node_modules/jquery/dist/jquery.min.js'
+            'node_modules/jquery/dist/jquery.min.js',
+            'node_modules/pako/dist/pako.min.js',
+            'static/spin.min.js',
+            'static/spin.js'
         ])
         .pipe(gulp.dest(conf.paths.docs + '/js'))
         .pipe(connect.reload());

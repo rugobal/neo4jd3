@@ -106,7 +106,6 @@ body {
 
     .overlay {
         cursor: default;
-        fill: #6ac6ff;
         -ms-filter: 'progid:DXImageTransform.Microsoft.Alpha(Opacity=0)';
         filter: alpha(opacity=0);
         opacity: 0;
@@ -132,5 +131,5 @@ svg {
     stroke: slategray;
     stroke-opacity: 0.6;
     fill: none;
-    stroke-width: 1px;
+    stroke-width: 1.5px;
 }
